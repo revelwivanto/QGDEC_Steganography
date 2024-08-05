@@ -106,8 +106,30 @@ class qgdec:
         first_expression = max(min((x - a) / (b - a), 1, (d - x) / (d - c)), 0)
         return max(first_expression)
 
-
-
+    def determineLV(outputfuzz):
+        categories = {
+        'Very small': {'b': 0., 'c': 0.25},
+        'Small': {'b': 0.5, 'c': 1.5},
+        'Small to moderate': {'b': 1.75, 'c': 3},
+        'Moderate to large': {'b': 3.5, 'c': 5},
+        'Large': {'b': 5.5, 'c': 7},
+        'Very large': {'b': 7.75, 'c': 8},}
+        # Add other categories as needed
+        closest_category = None
+        smallest_difference = float('inf')
+        for category, points in categories.items():
+            diff_b = abs(outputfuzz - points['b'])
+            diff_c = abs(outputfuzz - points['c'])
+            smallest_diff = min(diff_b, diff_c)
+            # Update the closest category if the current one is closer
+            if smallest_diff < smallest_difference:
+                smallest_difference = smallest_diff
+                closest_category = category
+        return closest_category
+    
+    def COG(LVA, LVM):
+        EV = abs(LVA - LVM)
+        return EV
 
 def main():
     image_path = "C:\Users\crp8223\Downloads\LSB-Steganography-master\coverimg"
