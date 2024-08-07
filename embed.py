@@ -14,6 +14,7 @@ class qgdec:
 
     def createblock(self):
         self.Embed_lvl_queue = []
+        new_block = []
         # If the image is not even, add an extra row or column
         if self.img.shape[0] % 2 == 1:
             self.img = np.vstack([self.img, self.img[-1, :]])  # Add an extra row with same PV as last row
@@ -83,8 +84,10 @@ class qgdec:
                     new_px2 = self.eq13(dnewnew2, ka2)
                     new_px3 = self.eq13(dnewnew3, ka3)
                     new_px4 = self.eq13(dnewnew4, ka4)
-                new_block = np.array([new_px1, new_px2, new_px3, new_px4])
-                print (new_block)
+                block_pxlval = np.array([new_px1, new_px2, new_px3, new_px4])
+                new_block.append(block_pxlval) 
+        print('block',self.img[2,0])
+        print('newblock',new_block[1])
         return new_block
                 
 
@@ -257,7 +260,7 @@ class qgdec:
     
 
 def main():
-    image_path = "C:/Users/revel/Documents/GitHub/QGDEC_Steganography/pic.jpeg"
+    image_path = "C:/Users/revel/Documents/GitHub/QGDEC_Steganography/7.1.04.tiff"
     # Load the image in grayscale mode
     img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
     # If the image path is not valid, the img will be None
@@ -286,12 +289,15 @@ def main():
         new_block = np.uint8(new_block)  # Convert to 8-bit format
         
         # Ensure new_block has the correct shape
-        if new_block.ndim == 1:
-            height, width = img.shape
-            new_block = new_block.reshape((height, width))
-        elif new_block.ndim == 2 and new_block.shape != img.shape:
-            print(f"Shape mismatch: expected {img.shape}, got {new_block.shape}")
+        height, width = img.shape
+        num_elements = height * width
+        
+        if new_block.size != num_elements:
+            print(f"Error: new_block has {new_block.size} elements, expected {num_elements}.")
             return
+        
+        # Reshape new_block to the same shape as the original image
+        new_block = new_block.reshape((height, width))
         
         # Use PIL to create an image from the new array of pixels
         new_image = Image.fromarray(new_block)
