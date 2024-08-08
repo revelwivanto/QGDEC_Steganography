@@ -318,14 +318,14 @@ class qgdec:
         return dnew
         
     def eq11(self, dnew, Embed_lvl):
-
         Embed_lvl = max(0, int(Embed_lvl))
+
+        # Clean up the bits by removing any tabs or spaces
+        self.bits = self.bits.replace('\t', '').replace(' ', '')
 
         if Embed_lvl == 0:
             new_bits = 0
-        # Check if there are enough bits left
         elif len(self.bits) < Embed_lvl:
-            # If not, take all remaining bits
             if self.bits:  # Check if self.bits is not empty
                 new_bits = int(self.bits, 2)
             else:
@@ -338,14 +338,17 @@ class qgdec:
                 self.bits = self.bits[Embed_lvl:]
             else:
                 new_bits = 0
-        # Calculate dnewnew
+        
         if self.bits:
             dnewnew = (2 * dnew) + new_bits 
         else:
             dnewnew = 0
+
         if self.p == 0:
-            print ('bla',self.bits)
+            print('bla', self.bits)
+
         return dnewnew
+
 
 
     
@@ -413,7 +416,7 @@ class qgdec:
     
 
 def main():
-    image_path = "C:/Users/crp8223/Downloads/LSB-Steganography-master/tes.jpg"
+    image_path = "C:/Users/revel/Documents/GitHub/QGDEC_Steganography/Pepper.tiff"
     # Load the image in grayscale mode
     img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
     # If the image path is not valid, the img will be None
