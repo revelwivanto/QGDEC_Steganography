@@ -1,7 +1,6 @@
 import cv2
 import numpy as np
 import math
-import skfuzzy as fuzz
 from PIL import Image
 import os
 from collections import deque
@@ -11,10 +10,14 @@ class qgdec:
     def __init__(self, im, bits):
         self.img = im
         self.bits = bits
+        self.avg_pixel_value = np.average(im)
+        self.p = 0
 
     def createblock(self):
         self.Embed_lvl_queue = []
         new_block = []
+        old_block = []
+        progress = []
         # If the image is not even, add an extra row or column
         if self.img.shape[0] % 2 == 1:
             self.img = np.vstack([self.img, self.img[-1, :]])  # Add an extra row with same PV as last row
@@ -37,12 +40,11 @@ class qgdec:
                 ]
                 h_avg = np.mean(h)
                 h_med = np.median(h)
+                characteristic = (h_avg + h_med)/2
                 Embed_lvl = np.zeros_like(self.img, dtype=float)  # Ensure Embed_lvl is a float array
-                mean_value = np.mean([self.embedlvl(h_avg), self.embedlvl(h_med)])
-                Embed_lvl[i, j] = mean_value
+                Embed_lvl[i, j] = self.embedlvl(characteristic)
                 # self.Embed_lvl_queue.append(Embed_lvl[i, j])
-                avg_pixblock = np.mean(block)
-                if avg_pixblock <= 150:
+                if self.avg_pixel_value <= 150:
                     kb1 = self.img[i, j] - (self.img[i, j] % 4)
                     kb2 = self.img[i, j + 1] - (self.img[i, j + 1] % 4)
                     kb3 = self.img[i + 1, j] - (self.img[i + 1, j] % 4)
@@ -63,6 +65,18 @@ class qgdec:
                     new_px2 = self.eq12(dnewnew2, kb2)
                     new_px3 = self.eq12(dnewnew3, kb3)
                     new_px4 = self.eq12(dnewnew4, kb4)
+                    if self.p == 0:
+                        progress.append(h_avg)
+                        progress.append(h_med)
+                        progress.append(characteristic)
+                        progress.append(kb1)
+                        progress.append(d1)
+                        progress.append(dnew1)
+                        progress.append(dnewnew1)
+                        progress.append(new_px1)
+                        progress.append(Embed_lvl[0,0])
+                        self.p = 1
+                        
                 else:
                     ka1 = self.img[i, j] + abs((self.img[i, j] % 4) - 3)
                     ka2 = self.img[i, j + 1] + abs((self.img[i, j + 1] % 4) - 3)
@@ -86,21 +100,169 @@ class qgdec:
                     new_px4 = self.eq13(dnewnew4, ka4)
                 block_pxlval = np.array([new_px1, new_px2, new_px3, new_px4])
                 new_block.append(block_pxlval) 
-        print('block',self.img[2,0])
-        print('newblock',new_block[1])
+                old_block.append(block) 
+        with open('orgpx.txt', 'w') as f:
+            # Iterate over the data
+            for item in old_block:
+                # Write each item on a new line
+                f.write("%s\n" % item)
+        with open('stgpx.txt', 'w') as f:
+            # Iterate over the data
+            for item in new_block:
+                # Write each item on a new line
+                f.write("%s\n" % item)
+        print(progress)
+        print('avg pxl val',self.avg_pixel_value)
+        print('block',self.img[0,0])
+        print('newblock',new_block[0])
         return new_block
                 
+    def trapmf(self, x, abcd):
+        """
+        Trapezoidal membership function generator.
 
-    
+        Parameters
+        ----------
+        x : 1d array
+            Independent variable.
+        abcd : 1d array, length 4
+            Four-element vector.  Ensure a <= b <= c <= d.
+
+        Returns
+        -------
+        y : 1d array
+            Trapezoidal membership function.
+        """
+        assert len(abcd) == 4, 'abcd parameter must have exactly four elements.'
+        a, b, c, d = np.r_[abcd]
+        assert a <= b and b <= c and c <= d, 'abcd requires the four elements \
+                                            a <= b <= c <= d.'
+        y = np.ones(len(x))
+
+        idx = np.nonzero(x <= b)[0]
+        y[idx] = self.trimf(x[idx], np.r_[a, b, b])
+
+        idx = np.nonzero(x >= c)[0]
+        y[idx] = self.trimf(x[idx], np.r_[c, c, d])
+
+        idx = np.nonzero(x < a)[0]
+        y[idx] = np.zeros(len(idx))
+
+        idx = np.nonzero(x > d)[0]
+        y[idx] = np.zeros(len(idx))
+
+        return y
+
+
+    def trimf(self, x, abc):
+        """
+        Triangular membership function generator.
+
+        Parameters
+        ----------
+        x : 1d array
+            Independent variable.
+        abc : 1d array, length 3
+            Three-element vector controlling shape of triangular function.
+            Requires a <= b <= c.
+
+        Returns
+        -------
+        y : 1d array
+            Triangular membership function.
+        """
+        assert len(abc) == 3, 'abc parameter must have exactly three elements.'
+        a, b, c = np.r_[abc]     # Zero-indexing in Python
+        assert a <= b and b <= c, 'abc requires the three elements a <= b <= c.'
+
+        y = np.zeros(len(x))
+
+        # Left side
+        if a != b:
+            idx = np.nonzero(np.logical_and(a < x, x < b))[0]
+            y[idx] = (x[idx] - a) / float(b - a)
+
+        # Right side
+        if b != c:
+            idx = np.nonzero(np.logical_and(b < x, x < c))[0]
+            y[idx] = (c - x[idx]) / float(c - b)
+
+        idx = np.nonzero(x == b)
+        y[idx] = 1
+        return y
+
+    def centroid(self, x, mfx):
+        """
+        Defuzzification using centroid (`center of gravity`) method.
+
+        Parameters
+        ----------
+        x : 1d array, length M
+            Independent variable
+        mfx : 1d array, length M
+            Fuzzy membership function
+
+        Returns
+        -------
+        u : 1d array, length M
+            Defuzzified result
+
+        See also
+        --------
+        skfuzzy.defuzzify.defuzz, skfuzzy.defuzzify.dcentroid
+        """
+
+        '''
+        As we suppose linearity between each pair of points of x, we can calculate
+        the exact area of the figure (a triangle or a rectangle).
+        '''
+
+        sum_moment_area = 0.0
+        sum_area = 0.0
+
+        # If the membership function is a singleton fuzzy set:
+        if len(x) == 1:
+            return (x[0] * mfx[0]
+                    / np.fmax(mfx[0], np.finfo(float).eps).astype(float))
+
+        # else return the sum of moment*area/sum of area
+        for i in range(1, len(x)):
+            x1 = x[i - 1]
+            x2 = x[i]
+            y1 = mfx[i - 1]
+            y2 = mfx[i]
+
+            # if y1 == y2 == 0.0 or x1==x2: --> rectangle of zero height or width
+            if not (y1 == y2 == 0.0 or x1 == x2):
+                if y1 == y2:  # rectangle
+                    moment = 0.5 * (x1 + x2)
+                    area = (x2 - x1) * y1
+                elif y1 == 0.0 and y2 != 0.0:  # triangle, height y2
+                    moment = 2.0 / 3.0 * (x2 - x1) + x1
+                    area = 0.5 * (x2 - x1) * y2
+                elif y2 == 0.0 and y1 != 0.0:  # triangle, height y1
+                    moment = 1.0 / 3.0 * (x2 - x1) + x1
+                    area = 0.5 * (x2 - x1) * y1
+                else:
+                    moment = ((2.0 / 3.0 * (x2 - x1) * (y2 + 0.5 * y1))
+                            / (y1 + y2) + x1)
+                    area = 0.5 * (x2 - x1) * (y1 + y2)
+
+                sum_moment_area += moment * area
+                sum_area += area
+
+        return (sum_moment_area
+                / np.fmax(sum_area, np.finfo(float).eps).astype(float))
+                
     def embedlvl(self, characteristics):
-        
+            
         categories = {
-            'Very small': {'a': -5.0, 'b': -1.0, 'c': 0.0, 'd': 1.0},
-            'Small': {'a': 0.5, 'b': 1.0, 'c': 9.5, 'd': 10.5},
-            'Small to medium': {'a': 9.5, 'b': 10.5, 'c': 18.0, 'd': 22.0},
-            'Medium to large': {'a': 18.0, 'b': 22.0, 'c': 28.0, 'd': 32.0},
-            'Large': {'a': 28.0, 'b': 32.0, 'c': 80.0, 'd': 100.0},
-            'Very large': {'a': 80.0, 'b': 100.0, 'c': 128.0, 'd': 140.0},
+            'Very small': {'b': -1.0, 'c': 0.0},
+            'Small': {'b': 1.0, 'c': 9.5},
+            'Small to medium': {'b': 10.5, 'c': 18.0},
+            'Medium to large': {'b': 22.0, 'c': 28.0},
+            'Large': {'b': 32.0, 'c': 80.0},
+            'Very large': {'b': 100.0, 'c': 128.0},
         }
         
         LV = None
@@ -114,38 +276,28 @@ class qgdec:
             if temp_smallest_diff < smallest_difference:
                 smallest_difference = temp_smallest_diff
                 LV = category
-        
-        if LV:
-            selected_points = categories[LV]
-            
-        trapezoid = max(min((characteristics - selected_points['a']) / (selected_points['b'] - selected_points['a']), 1, 
-                            (selected_points['d'] - characteristics) / (selected_points['d'] - selected_points['c'])), 0)
-
+        if self.p == 0:
+            print(LV)
         categories = {
         'Very small': {'a': -1.0,'b': 0, 'c': 0.25, 'd': 0.5},
         'Small': {'a': 0.25,'b': 0.5, 'c': 1.5, 'd': 1.75},
-        'Small to moderate': {'a': 1.5,'b': 1.75, 'c': 3.0, 'd': 3.5},
-        'Moderate to large': {'a': 3.0,'b': 3.5, 'c': 5.0, 'd': 5.5},
+        'Small to medium': {'a': 1.5,'b': 1.75, 'c': 3.0, 'd': 3.5},
+        'Medium to large': {'a': 3.0,'b': 3.5, 'c': 5.0, 'd': 5.5},
         'Large': {'a': 5.0,'b': 5.5, 'c': 7.0, 'd': 7.5},
         'Very large': {'a': 7.0,'b': 7.75, 'c': 8.0, 'd': 9.0},}
         # Add other categories as needed
-        LV = None
-        smallest_difference = float('inf')
-        for category, points in categories.items():
-            diff_b = abs(trapezoid - points['b'])
-            diff_c = abs(trapezoid - points['c'])
-            temp_smallest_diff = min(diff_b, diff_c)
-            # Update the closest category if the current one is closer
-            if temp_smallest_diff < smallest_difference:
-                smallest_difference = temp_smallest_diff
-                LV = category
+        
         if LV:
             selected_points = categories[LV]
-        
-        x = np.arange(selected_points['a'], selected_points['d'], 0.1)
-        mfx = fuzz.trapmf(x, [selected_points['a'], selected_points['b'], selected_points['c'], selected_points['d']])
-        Embedlvl = np.ceil(fuzz.centroid(x, mfx))
+        if self.p == 0:
+            print(selected_points)
+        x = np.arange(0, 8.1, 0.1)
+        mfx = self.trapmf(x, [selected_points['a'], selected_points['b'], selected_points['c'], selected_points['d']])
+        if self.p ==0:
+            print(mfx)
+        Embedlvl = np.ceil(self.centroid(x, mfx))
         return Embedlvl
+ 
 
     @staticmethod
     def eq8(block, kb):
@@ -172,14 +324,12 @@ class qgdec:
         if Embed_lvl == 0:
             new_bits = 0
         # Check if there are enough bits left
-        if len(self.bits) < Embed_lvl:
+        elif len(self.bits) < Embed_lvl:
             # If not, take all remaining bits
             if self.bits:  # Check if self.bits is not empty
                 new_bits = int(self.bits, 2)
             else:
                 new_bits = 0
-            # Set bits to an empty string
-            self.bits = ''
         elif len(self.bits) >= Embed_lvl and Embed_lvl > 0:
             if self.bits:
                 # If there are enough bits, take the first Embed_lvl bits
@@ -188,10 +338,13 @@ class qgdec:
                 self.bits = self.bits[Embed_lvl:]
             else:
                 new_bits = 0
-            self.bits = ''
         # Calculate dnewnew
-        dnewnew = 2 * dnew + new_bits 
-
+        if self.bits:
+            dnewnew = (2 * dnew) + new_bits 
+        else:
+            dnewnew = 0
+        if self.p == 0:
+            print ('bla',self.bits)
         return dnewnew
 
 
@@ -260,7 +413,7 @@ class qgdec:
     
 
 def main():
-    image_path = "C:/Users/revel/Documents/GitHub/QGDEC_Steganography/7.1.04.tiff"
+    image_path = "C:/Users/crp8223/Downloads/LSB-Steganography-master/tes.jpg"
     # Load the image in grayscale mode
     img = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
     # If the image path is not valid, the img will be None
